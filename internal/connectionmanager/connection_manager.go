@@ -65,15 +65,16 @@ func NewConnectionManager(resolver Resolver, conf amqp.Config, log logger.Logger
 	}
 
 	connManager := ConnectionManager{
-		logger:              log,
-		resolver:            resolver,
-		connection:          conn,
-		amqpConfig:          conf,
-		connectionMu:        &sync.RWMutex{},
-		ReconnectInterval:   reconnectInterval,
-		reconnectionCount:   0,
-		reconnectionCountMu: &sync.Mutex{},
-		dispatcher:          dispatcher.NewDispatcher(),
+		logger:                log,
+		resolver:              resolver,
+		connection:            conn,
+		amqpConfig:            conf,
+		connectionMu:          &sync.RWMutex{},
+		ReconnectInterval:     reconnectInterval,
+		reconnectionCount:     0,
+		reconnectionCountMu:   &sync.Mutex{},
+		dispatcher:            dispatcher.NewDispatcher(),
+		channelReconnectorsMu: &sync.Mutex{},
 	}
 	go connManager.startNotifyClose()
 	return &connManager, nil
