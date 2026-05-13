@@ -8,21 +8,24 @@ import (
 	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
+	"github.com/wagslane/go-rabbitmq/internal/channelreconnector"
 	"github.com/wagslane/go-rabbitmq/internal/dispatcher"
 	"github.com/wagslane/go-rabbitmq/internal/logger"
 )
 
 // ConnectionManager -
 type ConnectionManager struct {
-	logger              logger.Logger
-	resolver            Resolver
-	connection          *amqp.Connection
-	amqpConfig          amqp.Config
-	connectionMu        *sync.RWMutex
-	ReconnectInterval   time.Duration
-	reconnectionCount   uint
-	reconnectionCountMu *sync.Mutex
-	dispatcher          *dispatcher.Dispatcher
+	logger                logger.Logger
+	resolver              Resolver
+	connection            *amqp.Connection
+	amqpConfig            amqp.Config
+	connectionMu          *sync.RWMutex
+	ReconnectInterval     time.Duration
+	reconnectionCount     uint
+	reconnectionCountMu   *sync.Mutex
+	dispatcher            *dispatcher.Dispatcher
+	channelReconnectorsMu *sync.Mutex
+	channelReconnectors   []channelreconnector.ChannelReconnector
 }
 
 type Resolver interface {
@@ -159,11 +162,16 @@ func (connManager *ConnectionManager) reconnect() error {
 	connManager.connectionMu.Lock()
 	defer connManager.connectionMu.Unlock()
 
-	conn, err := dial(connManager.logger, connManager.resolver, amqp.Config(connManager.amqpConfig))
+	conn, err := dial(connManager.logger, connManager.resolver, connManager.amqpConfig)
 	if err != nil {
 		return err
 	}
 
+	for _, chm := range connManager.channelReconnectors {
+		if err = chm.ReconnectChannel(); err != nil {
+			connManager.logger.Warnf("error closing channel while reconnecting: %v", err)
+		}
+	}
 	if err = connManager.connection.Close(); err != nil {
 		connManager.logger.Warnf("error closing connection while reconnecting: %v", err)
 	}
@@ -178,4 +186,14 @@ func (connManager *ConnectionManager) IsClosed() bool {
 	defer connManager.connectionMu.Unlock()
 
 	return connManager.connection.IsClosed()
+}
+
+func (connManager *ConnectionManager) RegisterChannelReconnector(cr channelreconnector.ChannelReconnector) {
+	connManager.channelReconnectorsMu.Lock()
+	defer connManager.channelReconnectorsMu.Unlock()
+	if connManager.channelReconnectors == nil {
+		connManager.channelReconnectors = []channelreconnector.ChannelReconnector{cr}
+	} else {
+		connManager.channelReconnectors = append(connManager.channelReconnectors, cr)
+	}
 }

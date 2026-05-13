@@ -40,6 +40,7 @@ func NewChannelManager(connManager *connectionmanager.ConnectionManager, log log
 		reconnectionCountMu: &sync.Mutex{},
 		dispatcher:          dispatcher.NewDispatcher(),
 	}
+	connManager.RegisterChannelReconnector(&chanManager)
 	go chanManager.startNotifyCancelOrClosed()
 	return &chanManager, nil
 }
@@ -146,4 +147,8 @@ func (chanManager *ChannelManager) Close() error {
 // the connection manager has successfully reconnect to the server
 func (chanManager *ChannelManager) NotifyReconnect() (<-chan error, chan<- struct{}) {
 	return chanManager.dispatcher.AddSubscriber()
+}
+
+func (chanManager *ChannelManager) ReconnectChannel() error {
+	return chanManager.reconnect()
 }
