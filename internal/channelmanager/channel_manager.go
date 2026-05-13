@@ -149,6 +149,8 @@ func (chanManager *ChannelManager) NotifyReconnect() (<-chan error, chan<- struc
 	return chanManager.dispatcher.AddSubscriber()
 }
 
-func (chanManager *ChannelManager) ReconnectChannel() error {
-	return chanManager.reconnect()
+func (chanManager *ChannelManager) CloseChannel() error {
+	chanManager.channelMu.Lock()
+	defer chanManager.channelMu.Unlock()
+	return chanManager.channel.Close()
 }

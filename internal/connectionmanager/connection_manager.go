@@ -8,24 +8,24 @@ import (
 	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
-	"github.com/wagslane/go-rabbitmq/internal/channelreconnector"
+	"github.com/wagslane/go-rabbitmq/internal/channelcloser"
 	"github.com/wagslane/go-rabbitmq/internal/dispatcher"
 	"github.com/wagslane/go-rabbitmq/internal/logger"
 )
 
 // ConnectionManager -
 type ConnectionManager struct {
-	logger                logger.Logger
-	resolver              Resolver
-	connection            *amqp.Connection
-	amqpConfig            amqp.Config
-	connectionMu          *sync.RWMutex
-	ReconnectInterval     time.Duration
-	reconnectionCount     uint
-	reconnectionCountMu   *sync.Mutex
-	dispatcher            *dispatcher.Dispatcher
-	channelReconnectorsMu *sync.Mutex
-	channelReconnectors   []channelreconnector.ChannelReconnector
+	logger              logger.Logger
+	resolver            Resolver
+	connection          *amqp.Connection
+	amqpConfig          amqp.Config
+	connectionMu        *sync.RWMutex
+	ReconnectInterval   time.Duration
+	reconnectionCount   uint
+	reconnectionCountMu *sync.Mutex
+	dispatcher          *dispatcher.Dispatcher
+	channelClosersMu    *sync.Mutex
+	channelClosers      []channelcloser.ChannelCloser
 }
 
 type Resolver interface {
@@ -65,16 +65,16 @@ func NewConnectionManager(resolver Resolver, conf amqp.Config, log logger.Logger
 	}
 
 	connManager := ConnectionManager{
-		logger:                log,
-		resolver:              resolver,
-		connection:            conn,
-		amqpConfig:            conf,
-		connectionMu:          &sync.RWMutex{},
-		ReconnectInterval:     reconnectInterval,
-		reconnectionCount:     0,
-		reconnectionCountMu:   &sync.Mutex{},
-		dispatcher:            dispatcher.NewDispatcher(),
-		channelReconnectorsMu: &sync.Mutex{},
+		logger:              log,
+		resolver:            resolver,
+		connection:          conn,
+		amqpConfig:          conf,
+		connectionMu:        &sync.RWMutex{},
+		ReconnectInterval:   reconnectInterval,
+		reconnectionCount:   0,
+		reconnectionCountMu: &sync.Mutex{},
+		dispatcher:          dispatcher.NewDispatcher(),
+		channelClosersMu:    &sync.Mutex{},
 	}
 	go connManager.startNotifyClose()
 	return &connManager, nil
@@ -168,8 +168,8 @@ func (connManager *ConnectionManager) reconnect() error {
 		return err
 	}
 
-	for _, chm := range connManager.channelReconnectors {
-		if err = chm.ReconnectChannel(); err != nil {
+	for _, chm := range connManager.channelClosers {
+		if err = chm.CloseChannel(); err != nil {
 			connManager.logger.Warnf("error closing channel while reconnecting: %v", err)
 		}
 	}
@@ -189,12 +189,12 @@ func (connManager *ConnectionManager) IsClosed() bool {
 	return connManager.connection.IsClosed()
 }
 
-func (connManager *ConnectionManager) RegisterChannelReconnector(cr channelreconnector.ChannelReconnector) {
-	connManager.channelReconnectorsMu.Lock()
-	defer connManager.channelReconnectorsMu.Unlock()
-	if connManager.channelReconnectors == nil {
-		connManager.channelReconnectors = []channelreconnector.ChannelReconnector{cr}
+func (connManager *ConnectionManager) RegisterChannelReconnector(cr channelcloser.ChannelCloser) {
+	connManager.channelClosersMu.Lock()
+	defer connManager.channelClosersMu.Unlock()
+	if connManager.channelClosers == nil {
+		connManager.channelClosers = []channelcloser.ChannelCloser{cr}
 	} else {
-		connManager.channelReconnectors = append(connManager.channelReconnectors, cr)
+		connManager.channelClosers = append(connManager.channelClosers, cr)
 	}
 }
